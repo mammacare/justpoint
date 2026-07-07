@@ -1160,6 +1160,10 @@
       async function addReply(reqId, inputEl) {
         const text = inputEl.value.trim();
         if (!text) return;
+        // Clear immediately: the local snapshot re-renders before the write
+        // resolves, and the draft-restore in render() would otherwise put the
+        // sent text back into the rebuilt input.
+        inputEl.value = "";
         inputEl.disabled = true;
         try {
           await updateDoc(doc(db, "requests", reqId), {
@@ -1170,8 +1174,10 @@
               createdAt: Date.now(),
             }),
           });
-          inputEl.value = "";
         } catch (err) {
+          const live =
+            $("reqList").querySelector(`[data-reply="${reqId}"]`) || inputEl;
+          live.value = text; // give the draft back on failure
           toast("Couldn\u2019t send reply: " + (err.code || err.message));
         } finally {
           inputEl.disabled = false;
@@ -1645,13 +1651,22 @@
       }
 
       function render() {
-        $("composerSlot").innerHTML = composerHtml();
-        if (picked) {
-          $("cSubmit").onclick = submitRequest;
-          $("cCancel").onclick = () => {
-            picked = null;
-            render();
-          };
+        /* Firestore snapshots re-render at any moment (e.g. when someone
+           else files a request). Rebuilding the composer would wipe what
+           this user is typing — only rebuild it when the picked element
+           actually changed. */
+        const slot = $("composerSlot");
+        const composerKey = picked ? picked.selector + " " + picked.tag : "";
+        if (slot.dataset.key !== composerKey) {
+          slot.innerHTML = composerHtml();
+          slot.dataset.key = composerKey;
+          if (picked) {
+            $("cSubmit").onclick = submitRequest;
+            $("cCancel").onclick = () => {
+              picked = null;
+              render();
+            };
+          }
         }
 
         let list = requests.slice();
@@ -1662,6 +1677,22 @@
 
         $("reqCount").textContent = list.length;
         const holder = $("reqList");
+
+        /* Rebuilding the cards wipes half-typed replies \u2014 save their text
+           (and which one has focus) and restore after. */
+        const replyDrafts = {};
+        holder.querySelectorAll("[data-reply]").forEach((inp) => {
+          if (inp.value) replyDrafts[inp.getAttribute("data-reply")] = inp.value;
+        });
+        const focused = document.activeElement;
+        const focusedReply =
+          focused && focused.matches && focused.matches("[data-reply]")
+            ? {
+                id: focused.getAttribute("data-reply"),
+                pos: focused.selectionStart,
+              }
+            : null;
+
         if (!list.length) {
           holder.innerHTML = `<div class="req-empty">${
             filter.scope === "page"
@@ -1675,6 +1706,20 @@
           }</div>`;
         } else {
           holder.innerHTML = list.map(cardHtml).join("");
+        }
+
+        Object.entries(replyDrafts).forEach(([id, val]) => {
+          const inp = holder.querySelector(`[data-reply="${id}"]`);
+          if (inp) inp.value = val;
+        });
+        if (focusedReply) {
+          const inp = holder.querySelector(
+            `[data-reply="${focusedReply.id}"]`,
+          );
+          if (inp) {
+            inp.focus();
+            inp.setSelectionRange(focusedReply.pos, focusedReply.pos);
+          }
         }
 
         $("modePill").textContent =
