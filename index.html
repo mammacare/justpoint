@@ -845,13 +845,14 @@
           ></iframe>
           <div class="empty" id="emptyState">
             <div class="big">
-              Load a page, then click anything on it to request a change.
+              Load a page, then right-click anything on it to request a change.
             </div>
             <div class="steps">
               <ol>
                 <li>Choose a page above</li>
                 <li>
-                  Click the headline, paragraph, or button you want changed
+                  Right-click the headline, paragraph, or button you want
+                  changed — left-click works the page normally
                 </li>
                 <li>
                   Write the new copy or a note — your developer sees it
@@ -864,7 +865,8 @@
         <div class="mode-note" id="modeNote" style="display: none">
           <span class="pill" id="modePill">Markup mode</span>
           <span id="modeNoteText"
-            >Links are disabled — every click selects an element.</span
+            >Left-click uses the page. Right-click an element to request a
+            change.</span
           >
         </div>
       </section>
@@ -1378,19 +1380,36 @@
     if(hoverEl && hoverEl.classList) hoverEl.classList.add('__rl-hover');
   }, true);
 
-  ['click','mousedown','submit'].forEach(function(type){
-    document.addEventListener(type, function(e){
-      e.preventDefault(); e.stopPropagation();
-      if(type !== 'click') return;
-      var el = e.target;
-      if(!el || el.nodeType !== 1) return;
-      parent.postMessage({ type:'rl-pick',
-        selector: cssPath(el),
-        tag: el.tagName.toLowerCase(),
-        text: (el.innerText || el.textContent || '').trim().slice(0, 300)
-      }, '*');
-    }, true);
-  });
+  /* Left click: let the page work (tabs, buttons, carousels) but never
+     navigate away — links are neutered, in-page anchors scroll manually
+     (the injected <base> would otherwise turn them into real navigations). */
+  document.addEventListener('click', function(e){
+    var a = e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if(!a) return;
+    e.preventDefault(); e.stopPropagation();
+    var h = a.getAttribute('href') || '';
+    if(h.charAt(0) === '#' && h.length > 1){
+      try{
+        var t = document.getElementById(h.slice(1));
+        if(t) t.scrollIntoView({ behavior:'smooth', block:'start' });
+      }catch(err){}
+    }
+  }, true);
+  document.addEventListener('submit', function(e){
+    e.preventDefault(); e.stopPropagation();
+  }, true);
+
+  /* Right click: select the element for a change request */
+  document.addEventListener('contextmenu', function(e){
+    e.preventDefault(); e.stopPropagation();
+    var el = e.target;
+    if(!el || el.nodeType !== 1) return;
+    parent.postMessage({ type:'rl-pick',
+      selector: cssPath(el),
+      tag: el.tagName.toLowerCase(),
+      text: (el.innerText || el.textContent || '').trim().slice(0, 300)
+    }, '*');
+  }, true);
 
   function placePins(){
     document.querySelectorAll('.__rl-pin').forEach(function(p){ p.remove(); });
@@ -1726,8 +1745,8 @@
           me.role === "dev" ? "Review mode" : "Markup mode";
         $("modeNoteText").textContent =
           me.role === "dev"
-            ? "Click any element to file a request, or click a request’s selector to jump to it."
-            : "Links are disabled — every click selects an element.";
+            ? "Left-click uses the page. Right-click an element to file a request, or click a request’s selector to jump to it."
+            : "Left-click uses the page. Right-click an element to request a change. Links won’t navigate.";
       }
     </script>
   </body>
