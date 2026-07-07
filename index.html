@@ -1459,19 +1459,24 @@
           return;
         }
 
-        /* Strip page scripts (markup mode), but keep charting/mapping
-           libraries, the inline scripts that draw with them, and carousel/
-           slider scripts — otherwise Chart.js canvases render blank and
-           carousels stop rotating. */
-        const CHART_SRC =
-          /chart(\.umd|\.min)?\.js|chartjs|\bd3\b|highcharts|echarts|plotly|leaflet|apexcharts/i;
-        const CHART_INLINE =
-          /new Chart\s*\(|\bd3\s*\.\s*select|Highcharts\s*\.|echarts\s*\.\s*init|Plotly\s*\.|L\s*\.\s*map\s*\(|new ApexCharts\s*\(|getElementById\s*\(\s*["'][^"']*(chart|graph|pyramid|viz|plot|map)[^"']*["']|carousel|slideshow|slider|marquee|data-alt-src/i;
+        /* Left-click interacts with the page, so its own scripts must run:
+           keep every inline script, the site's own external scripts, and
+           known chart/animation libraries. Strip other third-party scripts
+           (analytics etc.) and <noscript>. Navigation is still blocked by
+           the inspector's link/submit interception and the meta-refresh
+           removal below. */
+        const LIB_SRC =
+          /chart(\.umd|\.min)?\.js|chartjs|\bd3\b|highcharts|echarts|plotly|leaflet|apexcharts|gsap/i;
         docParsed.querySelectorAll("script, noscript").forEach((n) => {
           if (n.tagName === "SCRIPT") {
             const src = n.getAttribute("src") || "";
-            if (src ? CHART_SRC.test(src) : CHART_INLINE.test(n.textContent))
-              return;
+            if (!src) return; // inline: the page's own UI wiring
+            if (LIB_SRC.test(src)) return;
+            try {
+              if (new URL(src, url).origin === new URL(url).origin) return;
+            } catch (e) {
+              /* unparseable src — strip it */
+            }
           }
           n.remove();
         });
@@ -1485,9 +1490,9 @@
             ? docParsed.head.prepend(base)
             : docParsed.documentElement.prepend(base);
         }
-        /* Scripts are stripped above, so JS-driven entrance animations never
-           run and content styled "hidden until animated" stays invisible.
-           Force everything visible and settled. */
+        /* Safety net: if a page hides content pending an entrance animation
+           whose trigger didn't survive (or never fires inside the sandbox),
+           force it visible and settled. */
         const noAnim = docParsed.createElement("style");
         noAnim.textContent = `
           /* Zero out entrance animations, but leave carousel/slider/marquee
