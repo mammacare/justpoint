@@ -333,8 +333,9 @@
         max-width: 420px;
       }
       .empty .steps {
-        font-size: 13px;
-        max-width: 400px;
+        font-size: 17px;
+        line-height: 1.6;
+        max-width: 480px;
         text-align: left;
       }
       .empty .steps b {
@@ -342,15 +343,20 @@
       }
       .empty .steps ol {
         margin: 0;
-        padding-left: 22px;
+        padding-left: 30px;
       }
       .empty .steps li {
-        margin: 4px 0;
-        padding-left: 4px;
+        margin: 16px 0;
+        padding-left: 8px;
       }
       .empty .steps li::marker {
         color: var(--red);
         font-weight: 700;
+        font-size: 19px;
+      }
+      .mouse-hint {
+        display: block;
+        margin: 8px 0 2px;
       }
       .mode-note {
         font-family: var(--mono);
@@ -855,15 +861,35 @@
             style="display: none"
           ></iframe>
           <div class="empty" id="emptyState">
-            <div class="big">
-              Load a page, then right-click anything on it to request a change.
-            </div>
+            <div class="big">Getting Started</div>
             <div class="steps">
               <ol>
                 <li>Choose a page above</li>
                 <li>
                   Right-click the headline, paragraph, or button you want
-                  changed — left-click works the page normally
+                  changed
+                  <svg
+                    class="mouse-hint"
+                    width="34"
+                    height="48"
+                    viewBox="0 0 40 56"
+                    fill="none"
+                    aria-hidden="true"
+                  >
+                    <rect
+                      x="1"
+                      y="1"
+                      width="38"
+                      height="54"
+                      rx="19"
+                      fill="var(--panel)"
+                      stroke="var(--muted)"
+                      stroke-width="2"
+                    />
+                    <path d="M20 1 A19 19 0 0 1 39 20 L20 20 Z" fill="var(--red)" />
+                    <line x1="20" y1="1" x2="20" y2="20" stroke="var(--panel)" stroke-width="2" />
+                    <rect x="18" y="9" width="4" height="11" rx="2" fill="var(--muted)" />
+                  </svg>
                 </li>
                 <li>
                   Write the new copy or a note — your developer sees it
@@ -1769,7 +1795,7 @@
            this user is typing — only rebuild it when the picked element
            actually changed. */
         const slot = $("composerSlot");
-        const composerKey = picked ? picked.selector + " " + picked.tag : "";
+        const composerKey = picked ? picked.selector + " " + picked.tag : "";
         if (slot.dataset.key !== composerKey) {
           slot.innerHTML = composerHtml();
           slot.dataset.key = composerKey;
