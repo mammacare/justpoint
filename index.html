@@ -47,6 +47,10 @@
         font-family: var(--sans);
         cursor: pointer;
       }
+      button:disabled {
+        opacity: 0.6;
+        cursor: default;
+      }
       textarea,
       input {
         font-family: var(--sans);
@@ -816,17 +820,17 @@
             <option
               value="https://mammacare.github.io/org-website-2026/bse-certification.html"
             >
-              BSE Instructor Certification
+              Breast Self-Examination Instructor Certification
             </option>
             <option
               value="https://mammacare.github.io/org-website-2026/bse-training-kit.html"
             >
-              BSE Training Kit
+              Breast Self-Exam Training Kit
             </option>
             <option
               value="https://mammacare.github.io/org-website-2026/young-women-at-risk.html"
             >
-              Who Is at Risk
+              Young Women at Risk
             </option>
             <option
               value="https://mammacare.github.io/org-website-2026/contact.html"
@@ -834,6 +838,13 @@
               Contact
             </option>
           </select>
+          <button
+            class="ghost-btn"
+            id="refreshPagesBtn"
+            title="Refetch every page from the live site so you're marking up the latest published content"
+          >
+            Refresh pages
+          </button>
         </div>
 
         <div class="viewport">
@@ -1286,6 +1297,30 @@
         return null;
       }
 
+      /* The dropdown's option text is a display label, not the source of
+         truth — the live page's own <title> is. Every time we fetch a page
+         we sync the label to it so a title change on the site (or a stale
+         hand-typed label here) never lingers. The homepage's <title> is SEO
+         copy, not a page name, so it keeps the "Home" label instead. */
+      function deriveTitle(html) {
+        const m = html.match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+        if (!m) return null;
+        const t = m[1]
+          .replace(/\s+/g, " ")
+          .replace(/\s*[—-]\s*(The\s+)?MammaCare Foundation\s*$/i, "")
+          .trim();
+        return t || null;
+      }
+      function syncOptionLabel(url, html) {
+        if (/\/index\.html$/i.test(url)) return; // "Home" stays "Home"
+        const title = deriveTitle(html);
+        if (!title) return;
+        const opt = Array.from(
+          document.querySelectorAll("#urlInput option"),
+        ).find((o) => o.value === url);
+        if (opt && opt.textContent.trim() !== title) opt.textContent = title;
+      }
+
       async function loadUrl(directUrl) {
         const url =
           typeof directUrl === "string" ? directUrl : $("urlInput").value;
@@ -1312,6 +1347,7 @@
         if (seq !== loadSeq) return; // a newer load took over
         if (html) {
           pageCache.set(url, html);
+          syncOptionLabel(url, html);
           renderHtml(html, url);
           return;
         }
@@ -1324,6 +1360,56 @@
         pendingGoto = null; // manual page choice cancels any queued jump
         loadUrl();
       });
+
+      /* Refetches every page from the live site, bypassing pageCache, so
+         edits published since sign-in show up. The page on screen goes
+         first (and re-renders as soon as it lands) so the visible result
+         feels immediate; the rest refresh in the background. */
+      async function refreshAllPages() {
+        const btn = $("refreshPagesBtn");
+        const urls = Array.from(
+          document.querySelectorAll("#urlInput option"),
+          (o) => o.value,
+        ).filter(Boolean);
+        const ordered = currentUrl
+          ? [currentUrl, ...urls.filter((u) => u !== currentUrl)]
+          : urls;
+        if (!ordered.length) return;
+
+        btn.disabled = true;
+        btn.textContent = "Refreshing…";
+        userLoadBusy = true;
+        const seq = ++loadSeq; // invalidate any in-flight loadUrl for currentUrl
+        if (currentUrl) showLoading();
+        let failures = 0;
+        try {
+          for (const u of ordered) {
+            const html = await fetchPageHtml(u, 2);
+            if (html) {
+              pageCache.set(u, html);
+              syncOptionLabel(u, html);
+              if (u === currentUrl && seq === loadSeq) renderHtml(html, u);
+            } else {
+              failures++;
+              if (u === currentUrl && seq === loadSeq)
+                showFetchFallback(
+                  u,
+                  "The site refused the request or the fetch proxies were blocked.",
+                );
+            }
+          }
+        } finally {
+          userLoadBusy = false;
+          btn.disabled = false;
+          btn.textContent = "Refresh pages";
+        }
+        toast(
+          failures
+            ? `Refreshed with ${failures} page${failures === 1 ? "" : "s"} unreachable`
+            : "All pages refreshed with the latest live content",
+        );
+      }
+      $("refreshPagesBtn").onclick = refreshAllPages;
 
       /* Warm the cache for every page in the dropdown so switching pages
          (and jumping to a request's page) never depends on the network or
@@ -1342,7 +1428,10 @@
           while (userLoadBusy) await new Promise((r) => setTimeout(r, 300));
           if (!pageCache.has(u)) {
             const html = await fetchPageHtml(u);
-            if (html) pageCache.set(u, html);
+            if (html) {
+              pageCache.set(u, html);
+              syncOptionLabel(u, html);
+            }
           }
           await new Promise((r) => setTimeout(r, 1000));
         }
