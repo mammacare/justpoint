@@ -931,7 +931,7 @@
         "lucas@mammacare.org": { name: "Lucas", role: "dev" },
         "webmaster@mammacare.org": { name: "Zach", role: "dev" },
         "markgoldstein@mammacare.org": { name: "Mark", role: "owner" },
-        "training@mammacare.org": { name: "Mary", role: "owner" },
+        "trainingg@mammacare.org": { name: "Mary", role: "owner" },
       };
 
       /* ================================================================ */
@@ -1706,7 +1706,8 @@
            (and which one has focus) and restore after. */
         const replyDrafts = {};
         holder.querySelectorAll("[data-reply]").forEach((inp) => {
-          if (inp.value) replyDrafts[inp.getAttribute("data-reply")] = inp.value;
+          if (inp.value)
+            replyDrafts[inp.getAttribute("data-reply")] = inp.value;
         });
         const focused = document.activeElement;
         const focusedReply =
@@ -1737,9 +1738,7 @@
           if (inp) inp.value = val;
         });
         if (focusedReply) {
-          const inp = holder.querySelector(
-            `[data-reply="${focusedReply.id}"]`,
-          );
+          const inp = holder.querySelector(`[data-reply="${focusedReply.id}"]`);
           if (inp) {
             inp.focus();
             inp.setSelectionRange(focusedReply.pos, focusedReply.pos);
