@@ -12,16 +12,27 @@ export const INSPECTOR = `
     '.__rl-pin.closed{background:#77726A}';
   (document.head || document.documentElement).appendChild(st);
 
+  /* Prefer tag+classes over bare position: a selector scoped only by
+     nth-of-type drifts onto the wrong element whenever an unrelated
+     sibling of the same tag is inserted or removed elsewhere on the
+     page (e.g. a newly added button shifting every button after it).
+     Classes make the match immune to that; ':nth-child(n of S)' is only
+     needed as a last resort when several siblings share the same
+     tag+classes, and even then it's scoped to just that matching set. */
   function cssPath(el){
     if(!el || el.nodeType !== 1) return '';
     var path = [];
     while(el && el.nodeType === 1 && el.tagName.toLowerCase() !== 'html'){
-var sel = el.tagName.toLowerCase();
-if(el.id){ path.unshift(sel + '#' + CSS.escape(el.id)); break; }
-var sib = el, nth = 1;
-while((sib = sib.previousElementSibling)){ if(sib.tagName === el.tagName) nth++; }
-path.unshift(sel + ':nth-of-type(' + nth + ')');
-el = el.parentElement;
+var tag = el.tagName.toLowerCase();
+if(el.id){ path.unshift(tag + '#' + CSS.escape(el.id)); break; }
+var classes = (el.className && typeof el.className === 'string')
+    ? el.className.trim().split(/\s+/).filter(Boolean)
+    : [];
+var base = tag + classes.map(function(c){ return '.' + CSS.escape(c); }).join('');
+var parent = el.parentElement;
+var sibs = parent ? Array.prototype.filter.call(parent.children, function(s){ return s.matches(base); }) : [el];
+path.unshift(sibs.length <= 1 ? base : base + ':nth-child(' + (sibs.indexOf(el) + 1) + ' of ' + base + ')');
+el = parent;
     }
     return path.join(' > ');
   }
@@ -63,12 +74,25 @@ text: (el.innerText || el.textContent || '').trim().slice(0, 300)
     }, '*');
   }, true);
 
+  /* Second line of defense against selector drift: even a class-scoped
+     selector can end up pointing at the wrong element if the page's
+     structure changed enough (or an old nth-of-type selector recorded
+     before this fix still drifts). If the recorded tag/text no longer
+     match what's live, skip the pin rather than show it in the wrong
+     place. */
+  function normText(t){ return (t || '').replace(/\s+/g, ' ').trim().slice(0, 300); }
+  function stillMatches(el, p){
+    if(p.tag && el.tagName.toLowerCase() !== p.tag) return false;
+    if(p.elementText && normText(el.innerText || el.textContent) !== normText(p.elementText)) return false;
+    return true;
+  }
+
   function placePins(){
     document.querySelectorAll('.__rl-pin').forEach(function(p){ p.remove(); });
     pins.forEach(function(p){
 try{
   var el = document.querySelector(p.selector);
-  if(!el) return;
+  if(!el || !stillMatches(el, p)) return;
   var r = el.getBoundingClientRect();
   var b = document.createElement('span');
   b.className = '__rl-pin' + (p.status === 'done' ? ' done' : p.status === 'closed' ? ' closed' : '');

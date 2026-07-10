@@ -873,7 +873,13 @@ function sendPins() {
   if (!frameReady || !currentUrl) return;
   const pins = requests
     .filter((r) => r.url === currentUrl)
-    .map((r) => ({ selector: r.selector, num: r.num, status: r.status }));
+    .map((r) => ({
+      selector: r.selector,
+      num: r.num,
+      status: r.status,
+      tag: r.tag,
+      elementText: r.elementText,
+    }));
   frame.contentWindow.postMessage({ type: "rl-pins", pins }, "*");
 }
 function gotoElement(selector) {
