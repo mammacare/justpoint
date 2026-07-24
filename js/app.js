@@ -70,8 +70,8 @@ const DEFAULT_PAGES = [
     title: "Breast Self-Exam Training Kit",
   },
   {
-    url: "https://mammacare.github.io/org-website-2026/young-women-at-risk.html",
-    title: "Young Women at Risk",
+    url: "https://mammacare.github.io/org-website-2026/grants.html",
+    title: "Grants",
   },
   {
     url: "https://mammacare.github.io/org-website-2026/contact.html",
@@ -535,9 +535,13 @@ $("landingBtn").onclick = showLandingScreen;
 $("emptyState").innerHTML = gettingStartedHtml(); // initial state, before any page loads
 
 /* ---------------- page loading ---------------- */
+/* corsproxy.io was dropped: on its current free tier it answers 200 OK
+   with its own marketing landing page (or a JSON "upgrade your plan"
+   error) instead of the requested site, which poisons the cache below.
+   These two serve the raw upstream body and don't inject their own. */
 const PROXIES = [
   (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
-  (u) => "https://corsproxy.io/?url=" + encodeURIComponent(u),
+  (u) => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u),
 ];
 
 function showLoading() {
@@ -574,15 +578,23 @@ function showFetchFallback(url, reason) {
 let loadSeq = 0; // stale in-flight loads must not clobber a newer one
 const pageCache = new Map(); // url -> html, so revisits are instant
 
-/* Proxies can return 200 OK with a rate-limit/error body instead of the
-   page. Rendering (and especially caching) that shows a blank viewport
-   for the rest of the session — reject anything that doesn't look like
-   a real document so the next proxy gets tried instead. */
+/* Proxies can return 200 OK with a rate-limit/error body — or, worse,
+   their OWN marketing/landing page — instead of the requested page.
+   Those bodies are often long, valid HTML, so a length + doctype check
+   alone accepts them; rendering (and especially caching) one shows a
+   blank viewport for the rest of the session, healed only by a full
+   reload. Reject anything that doesn't look like a real document, or
+   that carries a known proxy-service fingerprint, so the next proxy (or
+   the direct fetch) is used instead. A real target page won't reference
+   a proxy service's own domain/branding. */
+const PROXY_JUNK =
+  /corsproxy\.io|cors-anywhere|api\.allorigins\.win|api\.codetabs\.com|thingproxy|Fix CORS Errors Instantly|requests are not allowed on your plan/i;
 function looksLikeRealPage(html) {
   return (
     !!html &&
     html.length > 2000 &&
-    /<(!doctype|html|head|body)[\s>]/i.test(html.slice(0, 3000))
+    /<(!doctype|html|head|body)[\s>]/i.test(html.slice(0, 3000)) &&
+    !PROXY_JUNK.test(html)
   );
 }
 
@@ -706,7 +718,6 @@ async function refreshAllPages() {
   btn.textContent = "Refreshing…";
   userLoadBusy = true;
   const seq = ++loadSeq; // invalidate any in-flight loadUrl for currentUrl
-  if (currentUrl) showLoading();
   let failures = 0;
   try {
     for (const u of ordered) {
@@ -716,12 +727,11 @@ async function refreshAllPages() {
         syncOptionLabel(u, html);
         if (u === currentUrl && seq === loadSeq) renderHtml(html, u);
       } else {
+        // A failed/blocked refetch must NOT blank a page that was showing
+        // fine — keep the existing cached copy and leave the viewport as
+        // it is. (The page on screen isn't hidden up front for the same
+        // reason: nothing is torn down unless a real replacement lands.)
         failures++;
-        if (u === currentUrl && seq === loadSeq)
-          showFetchFallback(
-            u,
-            "The site refused the request or the fetch proxies were blocked.",
-          );
       }
     }
   } finally {
@@ -731,7 +741,7 @@ async function refreshAllPages() {
   }
   toast(
     failures
-      ? `Refreshed with ${failures} page${failures === 1 ? "" : "s"} unreachable`
+      ? `Refreshed — ${failures} page${failures === 1 ? "" : "s"} unreachable, kept their current version`
       : "All pages refreshed with the latest live content",
   );
 }
