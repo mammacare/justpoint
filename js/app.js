@@ -36,7 +36,7 @@ let picked = null;
 let filter = { scope: "page" };
 let frameReady = false;
 let unsubscribe = null;
-let pendingGoto = null; // selector to scroll to after a cross-page jump
+let pendingGoto = null; // request record to jump to after a cross-page load
 
 let pages = []; // live from Firestore: { id, url, title, order }
 let pagesUnsub = null;
@@ -909,9 +909,20 @@ function sendPins() {
     }));
   frame.contentWindow.postMessage({ type: "rl-pins", pins }, "*");
 }
-function gotoElement(selector) {
-  if (frameReady)
-    frame.contentWindow.postMessage({ type: "rl-goto", selector }, "*");
+/* Send every signal the inspector's resolver can use (selector, tag,
+   text), not just the selector, so a jump still lands even when the
+   stored CSS path no longer resolves. `req` is a full request record. */
+function gotoElement(req) {
+  if (!frameReady || !req) return;
+  frame.contentWindow.postMessage(
+    {
+      type: "rl-goto",
+      selector: req.selector,
+      tag: req.tag,
+      elementText: req.elementText,
+    },
+    "*",
+  );
 }
 
 /* ---------------- filters ---------------- */
@@ -931,13 +942,15 @@ $("filterAll").onclick = () => setFilter("all");
 $("reqList").addEventListener("click", (e) => {
   const sel = e.target.closest("[data-goto]");
   if (sel) {
-    const u = sel.getAttribute("data-url");
-    if (u === currentUrl) {
-      gotoElement(sel.getAttribute("data-goto"));
+    const card = sel.closest("[data-id]");
+    const req = card && requests.find((r) => r.id === card.dataset.id);
+    if (!req) return;
+    if (req.url === currentUrl) {
+      gotoElement(req);
     } else {
       // Jump to the element once the new page has rendered
-      pendingGoto = sel.getAttribute("data-goto");
-      loadUrl(u);
+      pendingGoto = req;
+      loadUrl(req.url);
     }
     return;
   }

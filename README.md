@@ -18,7 +18,16 @@ js/
   app.js                App logic: auth, Firestore sync, rendering, page loading
   firebase-config.js    Firebase project config + the email→name/role user map
   inspector.js          Script injected into every loaded page (pins, right-click capture)
+test/
+  inspector.test.mjs    Playwright regression test for the injected inspector
+  fixture.html          Static page the test drives
 ```
+
+> **inspector.js authoring note:** the inspector is written as a real
+> function and serialized to source with `Function.prototype.toString()` at
+> the bottom of the file, then injected into the sandboxed iframe as inline
+> script text. Keep it self-contained (no imports, no closure over module
+> scope) and don't add a minifier without revisiting how it's injected.
 
 ## Setup
 
@@ -40,6 +49,18 @@ js/
    - `requests` — the change requests
    - `pages` — the list of pages shown in the dropdown (seeded once from a
      default list the first time a signed-in user loads the app)
+
+## Tests
+
+The app itself has no build step, but the injected inspector has a
+Playwright regression test (it runs the real inspector inside a sandboxed
+iframe and drives it through its message protocol):
+
+```
+npm install
+npx playwright install chromium
+npm test
+```
 
 ## Deploying
 
