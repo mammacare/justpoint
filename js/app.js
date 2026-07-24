@@ -18,7 +18,7 @@ import {
   query,
   orderBy,
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import { FIREBASE_CONFIG, USERS, configured } from "./firebase-config.js";
+import { FIREBASE_CONFIG, configured } from "./firebase-config.js";
 import { INSPECTOR } from "./inspector.js";
 
 /* ================================================================ */
@@ -136,14 +136,10 @@ if (configured) {
 
   onAuthStateChanged(auth, (user) => {
     if (user) {
-      const known =
-        USERS[(user.email || "").toLowerCase()] ||
-        USERS[user.email] ||
-        null;
       me = {
         email: user.email,
-        name: known ? known.name : (user.email || "").split("@")[0],
-        role: known ? known.role : "owner",
+        name: (user.email || "").split("@")[0],
+        role: "owner",
       };
       enterApp();
     } else {
@@ -155,8 +151,7 @@ if (configured) {
 $("loginForm").addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!configured) {
-    $("loginErr").textContent =
-      "Add your Firebase config first (see README).";
+    $("loginErr").textContent = "Add your Firebase config first (see README).";
     return;
   }
   const btn = $("loginBtn");
@@ -194,8 +189,7 @@ function enterApp() {
   document.body.dataset.role = me.role;
   $("meName").textContent = me.name;
   $("roleBadge").className = "role-badge " + me.role;
-  $("roleLabel").textContent =
-    me.role === "dev" ? "Developer" : "Site owner";
+  $("roleLabel").textContent = me.role === "dev" ? "Developer" : "Site owner";
   $("managePagesBtn").style.display = me.role === "dev" ? "" : "none";
   if (me.role === "dev") filter.scope = "all";
   setFilter();
@@ -223,10 +217,7 @@ function leaveApp() {
 /* ---------------- firestore: live sync ---------------- */
 function subscribe() {
   if (unsubscribe) unsubscribe();
-  const q = query(
-    collection(db, "requests"),
-    orderBy("createdAt", "desc"),
-  );
+  const q = query(collection(db, "requests"), orderBy("createdAt", "desc"));
   $("syncDot").classList.remove("off");
   unsubscribe = onSnapshot(
     q,
@@ -238,9 +229,7 @@ function subscribe() {
     (err) => {
       $("syncDot").classList.add("off");
       $("syncDot").textContent = "offline";
-      toast(
-        "Lost connection to the database: " + (err.code || err.message),
-      );
+      toast("Lost connection to the database: " + (err.code || err.message));
     },
   );
 }
@@ -285,9 +274,7 @@ async function seedDefaultPages() {
 function renderPageOptions() {
   const sel = $("urlInput");
   const prevValue = sel.value;
-  sel
-    .querySelectorAll("option:not([value=''])")
-    .forEach((o) => o.remove());
+  sel.querySelectorAll("option:not([value=''])").forEach((o) => o.remove());
   pages.forEach((p) => {
     const openCount = requests.filter(
       (r) => r.url === p.url && r.status === "open",
@@ -298,8 +285,7 @@ function renderPageOptions() {
     // so a colored-circle glyph stands in for it as plain text: red +
     // count when open requests are waiting, green when there are none.
     o.textContent =
-      (openCount ? "\u{1F534} (" + openCount + ")  " : "\u{1F7E2} ") +
-      p.title;
+      (openCount ? "\u{1F534} (" + openCount + ")  " : "\u{1F7E2} ") + p.title;
     sel.appendChild(o);
   });
   if (pages.some((p) => p.url === prevValue)) sel.value = prevValue;
@@ -425,6 +411,7 @@ async function submitRequest() {
       createdAt: Date.now(),
       replies: [],
     });
+    clearDraft(currentUrl, picked.selector);
     picked = null;
     render();
     toast("Change request #" + num + " sent");
@@ -505,9 +492,9 @@ function gettingStartedHtml() {
   return `
     <div class="big">Getting Started</div>
     ${
-currentUrl
-  ? `<button class="ghost-btn" id="backToPageBtn">← Back to ${esc(pageTitle(currentUrl))}</button>`
-  : ""
+      currentUrl
+        ? `<button class="ghost-btn" id="backToPageBtn">← Back to ${esc(pageTitle(currentUrl))}</button>`
+        : ""
     }
     <div class="steps">
 <ol>
@@ -650,10 +637,18 @@ function syncOptionLabel(url, html) {
 }
 
 async function loadUrl(directUrl) {
-  const url =
-    typeof directUrl === "string" ? directUrl : $("urlInput").value;
+  const url = typeof directUrl === "string" ? directUrl : $("urlInput").value;
   if (!url) {
     toast("Choose a page first");
+    return;
+  }
+  if (
+    !confirmLeaveComposer(
+      "Load another page? Your unsent request text is saved — right-click the same element after it loads to come back to it.",
+    )
+  ) {
+    $("urlInput").value = currentUrl; // keep the dropdown on the visible page
+    pendingGoto = null; // a canceled load must not leave a jump queued
     return;
   }
   $("urlInput").value = url; // no-op if url isn't a listed page
@@ -694,6 +689,12 @@ $("urlInput").addEventListener("change", () => {
    first (and re-renders as soon as it lands) so the visible result
    feels immediate; the rest refresh in the background. */
 async function refreshAllPages() {
+  if (
+    !confirmLeaveComposer(
+      "Refresh every page from the live site? Your unsent request text is saved — right-click the same element after it reloads to come back to it.",
+    )
+  )
+    return;
   const btn = $("refreshPagesBtn");
   const urls = pages.map((p) => p.url);
   const ordered = currentUrl
@@ -862,6 +863,22 @@ window.addEventListener("message", (e) => {
     }
   }
   if (d.type === "rl-pick") {
+    // Right-click is the selection gesture, so it's easy to fire by
+    // accident while composing. If there's unsent text and the click
+    // lands on a different element, confirm before switching — the
+    // draft is saved either way (persisted keyed by the old selector),
+    // so this is about not yanking the composer away mid-sentence, not
+    // about losing text.
+    const switching = picked && picked.selector !== d.selector;
+    if (switching && composerHasText()) {
+      saveDraft();
+      if (
+        !confirm(
+          "Switch to the element you just right-clicked? Your current unsent text is saved — right-click the previous element to come back to it.",
+        )
+      )
+        return;
+    }
     picked = { selector: d.selector, tag: d.tag, text: d.text };
     render();
     const ta = document.querySelector("#composerSlot textarea");
@@ -936,8 +953,64 @@ $("reqList").addEventListener("keydown", (e) => {
   if (inp) addReply(inp.getAttribute("data-reply"), inp);
 });
 
+/* The composer is the one big input with no server-side draft. It
+   survives snapshot re-renders via the composerKey guard in render(),
+   but a real browser reload, the Refresh-pages button, switching pages,
+   or re-picking an element all destroy it. Persist it to sessionStorage
+   keyed by page + selector so it comes back when the same element is
+   picked again (including after a reload), the same way reply drafts
+   are preserved across re-renders. */
+function draftKey(url, selector) {
+  return "jp-draft::" + url + "::" + selector;
+}
+function saveDraft() {
+  if (!picked) return;
+  const proposed = $("cProposed") ? $("cProposed").value : "";
+  const note = $("cNote") ? $("cNote").value : "";
+  const key = draftKey(currentUrl, picked.selector);
+  try {
+    if (proposed || note)
+      sessionStorage.setItem(key, JSON.stringify({ proposed, note }));
+    else sessionStorage.removeItem(key);
+  } catch (e) {
+    /* storage full or blocked — best-effort only */
+  }
+}
+function loadDraft(url, selector) {
+  try {
+    const raw = sessionStorage.getItem(draftKey(url, selector));
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    return null;
+  }
+}
+function clearDraft(url, selector) {
+  try {
+    sessionStorage.removeItem(draftKey(url, selector));
+  } catch (e) {
+    /* ignore */
+  }
+}
+function composerHasText() {
+  const p = $("cProposed");
+  const n = $("cNote");
+  return !!((p && p.value.trim()) || (n && n.value.trim()));
+}
+/* Shared guard for actions that re-render the page and tear the
+   composer down (page switch, jumping to another page's request,
+   Refresh pages). Saves the current draft, then asks before going
+   ahead. Returns true if it's OK to proceed. */
+function confirmLeaveComposer(message) {
+  if (picked && composerHasText()) {
+    saveDraft();
+    return confirm(message);
+  }
+  return true;
+}
+
 function composerHtml() {
   if (!picked) return "";
+  const draft = loadDraft(currentUrl, picked.selector) || {};
   return `
     <div class="composer">
 <div class="picked">
@@ -945,9 +1018,9 @@ function composerHtml() {
   <span class="txt">${esc(picked.text) || "<i>no text in this element</i>"}</span>
 </div>
 <label for="cProposed">Change the text to</label>
-<textarea id="cProposed" placeholder="Write the exact copy you want here…"></textarea>
+<textarea id="cProposed" placeholder="Write the exact copy you want here…">${esc(draft.proposed || "")}</textarea>
 <label for="cNote">Note for the developer</label>
-<textarea id="cNote" placeholder="Anything else — tone, links, styling…"></textarea>
+<textarea id="cNote" placeholder="Anything else — tone, links, styling…">${esc(draft.note || "")}</textarea>
 <div class="actions">
   <button class="cancel" id="cCancel">Cancel</button>
   <button class="submit" id="cSubmit">Send request</button>
@@ -1003,9 +1076,12 @@ function render() {
     if (picked) {
       $("cSubmit").onclick = submitRequest;
       $("cCancel").onclick = () => {
+        clearDraft(currentUrl, picked.selector);
         picked = null;
         render();
       };
+      $("cProposed").addEventListener("input", saveDraft);
+      $("cNote").addEventListener("input", saveDraft);
     }
   }
 
@@ -1021,8 +1097,7 @@ function render() {
      (and which one has focus) and restore after. */
   const replyDrafts = {};
   holder.querySelectorAll("[data-reply]").forEach((inp) => {
-    if (inp.value)
-      replyDrafts[inp.getAttribute("data-reply")] = inp.value;
+    if (inp.value) replyDrafts[inp.getAttribute("data-reply")] = inp.value;
   });
   const focused = document.activeElement;
   const focusedReply =
@@ -1060,8 +1135,7 @@ function render() {
     }
   }
 
-  $("modePill").textContent =
-    me.role === "dev" ? "Review mode" : "Markup mode";
+  $("modePill").textContent = me.role === "dev" ? "Review mode" : "Markup mode";
   $("modeNoteText").textContent =
     me.role === "dev"
       ? "Left-click uses the page. Right-click an element to file a request, or click a request’s selector to jump to it."
